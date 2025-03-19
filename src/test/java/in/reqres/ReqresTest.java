@@ -1,20 +1,31 @@
 package in.reqres;
 
 
+import in.reqres.delete.ApiSpecDelete;
+import in.reqres.get.UserResponseGet;
+import in.reqres.get.UsersDatum;
+import in.reqres.get.UsersRoot;
+import in.reqres.patch.ApiSpecPATCH;
+import in.reqres.patch.RequestUserPATCH;
+import in.reqres.patch.ResponseUserPATCH;
+import in.reqres.post.UserRequest;
+import in.reqres.post.UserResponsePost;
 import in.reqres.put.ApiSpecPut;
 import in.reqres.put.UserPutRequest;
 import in.reqres.put.UserPutResponse;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
-import org.junit.jupiter.api.Assertions;
+import io.restassured.module.jsv.JsonSchemaValidator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import static io.restassured.RestAssured.given;
-import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class ReqresTest {
@@ -22,20 +33,27 @@ public class ReqresTest {
     public void getListOfUsersCheckName() {
         RestAssured.baseURI = "https://reqres.in/";
 
-        List<String> userNames =
+        UserResponseGet userResponse =
                 given()
                         .contentType(ContentType.JSON)
                         .when()
                         .get("api/users?page=1")
                         .then()
                         .statusCode(200)
+                        .log().all()
                         .extract()
-                        .jsonPath()
-                        .getList("data.first_name", String.class);
+                        .as(UserResponseGet.class);
 
-        System.out.println(userNames);
+//        List<UsersDatum> usersData = userResponse.getData();
+//        usersData.stream().forEach(x -> System.out.println(x));
+//        assertNotNull(userResponse.getData());
 
-        assertTrue(userNames.stream().anyMatch(name -> name.startsWith("T")));
+        System.out.println(userResponse);
+
+//        UsersDatum userJanet = userResponse.getData().stream()
+//                .filter(x -> x.getFirst_name().contains("Janet"))
+//                .findFirst().orElseThrow(() -> new NoSuchElementException("User Janet not found"));
+//        assertEquals(userJanet.getFirst_name(), "Janet", "Name not Janet");
     }
 
     @Test
@@ -43,10 +61,10 @@ public class ReqresTest {
         //Настраиваем спецификацию
         RestAssured.requestSpecification = ApiSpec.getRequestSpec();
         //Создаем объект пользователя
-        User requestUser = new User("John", "Developer");
+        UserRequest requestUser = new UserRequest("John", "Developer");
 
         //Отправляем запрос
-        User responseUser =
+        UserResponsePost responseUser =
                 given()
                         .body(requestUser) // Сериализация: объект -> JSON
                         .when()
@@ -54,7 +72,7 @@ public class ReqresTest {
                         .then()
                         .statusCode(201)
                         .extract()
-                        .as(User.class); // Десериализация: JSON -> объект
+                        .as(UserResponsePost.class); // Десериализация: JSON -> объект
 
         assertNotNull(responseUser.getId(), "ID пользователя не должен быть NULL");
         assertNotNull(responseUser.getCreatedAt(), "Дата создания не должна быть NULL");
@@ -99,9 +117,9 @@ public class ReqresTest {
     public void createAndValidationUser() {
         //RestAssured.requestSpecification = ApiSpec.getRequestSpec();
 
-        User userRequest = new User("John Doe", "Software Engineer");
+        UserRequest userRequest = new UserRequest("John Doe", "Software Engineer");
 
-        User userResponse = given()
+        UserResponsePost userResponse = given()
                 .spec(ApiSpec.getRequestSpec())
                 .body(userRequest)
                 .log().all()
@@ -111,7 +129,7 @@ public class ReqresTest {
                 .statusCode(201)
                 .log().all()
                 .extract()
-                .as(User.class);
+                .as(UserResponsePost.class);
         assertEquals(userRequest.getName(), userResponse.getName(), "Имена не равны");
         assertEquals(userRequest.getJob(), userResponse.getJob(), "Работы не равны");
         assertTrue(userResponse.getCreatedAt().contains("T"));
@@ -150,5 +168,82 @@ public class ReqresTest {
                     assertTrue(isJobValid, "Работа содержит меньше 5 символов");
                 }
         );
+    }
+
+    @ParameterizedTest
+    @CsvSource({"Denis, AutoTester", "Katyafynka, Karatishka"})
+    public void checkStatusAndParamUser(String name, String job) {
+
+        UserRequest requestUser = new UserRequest(name, job);
+
+        UserResponsePost responseUser = given()
+                .spec(ApiSpec.getRequestSpec())
+                .body(requestUser)
+                .when()
+                .post("/users")
+                .then()
+                .statusCode(201)
+                .body(JsonSchemaValidator.matchesJsonSchemaInClasspath("user-schema.json"))
+                .extract()
+                .as(UserResponsePost.class);
+        assertAll(
+                () -> assertEquals(name, responseUser.getName()),
+                () -> assertEquals(job, responseUser.getJob()),
+                () ->  assertNotNull(responseUser.getId()),
+                () ->  assertNotNull(responseUser.getCreatedAt())
+        );
+        System.out.println("Имя: " + name + " Работа: " + job);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"2", "3"})
+    public void deleteUser(int id) {
+        given()
+                .spec(ApiSpecDelete.getRequestSpecDelete())
+                .log().all()
+                .when()
+                .delete("" + id)
+                .then()
+                .statusCode(204)
+                .log().all();
+
+        UserResponseGet usersCheckDeleteUser = given()
+                .spec(ApiSpec.getRequestSpec())
+                .log().all()
+                .when()
+                .get("/users/" + id)
+                .then()
+                .log().all()
+                .extract()
+                .as(UserResponseGet.class);
+        assertNull(usersCheckDeleteUser.getData());
+    }
+
+    @ParameterizedTest()
+    @CsvSource("morpheus, zion resident, 2")
+    public void checkUserPatch(String name, String job, int id) {
+        RequestUserPATCH requestUserPATCH = new RequestUserPATCH(name, job);
+
+        ResponseUserPATCH responseUserPATCH = given()
+                .spec(ApiSpecPATCH.ApiSpecPatch())
+                .body(requestUserPATCH)
+                .when()
+                .patch(""+id)
+                .then()
+                .statusCode(200)
+                .extract()
+                .as(ResponseUserPATCH.class);
+
+        Map<String, Boolean> validationMap = Map.of(
+                "Имя", responseUserPATCH.getName().equals(name),
+                "Работа", responseUserPATCH.getJob().equals(job),
+                "Время обновления", responseUserPATCH.getUpdatedAt() != null
+        );
+
+        assertAll(
+                validationMap.entrySet().stream()
+                        .map(entry -> () -> assertTrue(entry.getValue(), entry.getKey()+ " Не обновился"))
+        );
+
     }
 }

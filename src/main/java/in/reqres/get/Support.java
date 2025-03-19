@@ -1,4 +1,4 @@
-package in.reqres;
+package in.reqres.get;
 
 public class Support {
     private String url;
