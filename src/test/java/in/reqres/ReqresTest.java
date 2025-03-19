@@ -13,6 +13,9 @@ import in.reqres.post.UserResponsePost;
 import in.reqres.put.ApiSpecPut;
 import in.reqres.put.UserPutRequest;
 import in.reqres.put.UserPutResponse;
+import in.reqres.register.RegisterSpec;
+import in.reqres.register.RegisterUserRequest;
+import in.reqres.register.RegisterUserResponse;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.module.jsv.JsonSchemaValidator;
@@ -245,5 +248,24 @@ public class ReqresTest {
                         .map(entry -> () -> assertTrue(entry.getValue(), entry.getKey()+ " Не обновился"))
         );
 
+    }
+
+    @Test
+    public void registerUserTest() {
+        RegisterUserRequest registerUserRequest = new RegisterUserRequest("eve.holt@reqres.in", "pistol");
+
+        RegisterUserResponse registerUserResponse = given()
+                .spec(RegisterSpec.registerSpec())
+                .body(registerUserRequest)
+                .log().all()
+                .when()
+                .post()
+                .then()
+                .log().all()
+                //.statusCode(200)
+                .extract()
+                .as(RegisterUserResponse.class);
+
+        System.out.println(registerUserResponse.getId() + " " + registerUserResponse.getToken());
     }
 }
